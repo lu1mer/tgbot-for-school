@@ -8,16 +8,24 @@ import openpyxl
 import json
 import os
 import datetime
+import sqlite3
 storage = MemoryStorage()
 admin_id = 612579531
-admin_id = 6125795311
+admin_id = 612579531
 token = '5579241270:AAEXkjIVCrDcSLLKjfR6SFH8C72JYgOPzz4'
 bot = Bot(token=token)
 dp = Dispatcher(bot,storage=storage)
 PERSON='00'
 
+db = sqlite3.connect('id.db')
+cursor = db.cursor()
+cursor.execute('''''')
+db.commit()
+
 btn_zam = KeyboardButton('Замены')
-zamen = ReplyKeyboardMarkup(resize_keyboard=True).add(btn_zam)
+btn_notice = KeyboardButton('Включить уведомления о заменах')
+zamen = ReplyKeyboardMarkup().add(btn_zam,btn_notice)
+
 
 btn_today = KeyboardButton('На сегодня')
 btn_tomorrow = KeyboardButton('На завтра')
@@ -68,11 +76,17 @@ async def clas1(message: types.Message,state: FSMContext):
 
 @dp.message_handler()
 async def main_dialog(message: types.Message):
+    global cursor,zamen,PERSON,db
     if message.text == 'Замены':
         if message.from_user.id == admin_id:
             await admin_service(message)
         else:
             await client(message)
+    if message.text == 'Включить уведомления о заменах':
+        cursor.execute(f"INSERT INTO ids VALUES ('{message.from_user.id}','{PERSON}')")
+        db.commit()
+        zamen = ReplyKeyboardMarkup(resize_keyboard=True).add(btn_zam)
+        await bot.send_message(message.from_user.id,'Уведомления включены',reply_markup=zamen)
 
 @dp.message_handler(state=None)
 async def client(message: types.Message):
@@ -102,7 +116,7 @@ async def state1(message: types.Message, state: FSMContext):
                 await bot.send_message(message.from_user.id, f'{i[0]} - {i[1]} урок - {i[2]}',reply_markup=zamen)
 
     except:
-        await bot.send_message(message.from_user.id,'Вы неправильно ввели дату или на такую дату нет еще замен')
+        await bot.send_message(message.from_user.id,'Вы неправильно ввели дату или на такую дату нет замен',reply_markup=zamen)
     await state.finish()
 
 @dp.message_handler(state=None)
@@ -119,6 +133,32 @@ async def state1(message: types.Message, state: FSMContext):
     await bot.download_file(file_path, "zam.xlsx")
     await state.finish()
     excel('zam.xlsx')
+
+    book = openpyxl.open('zam.xlsx',read_only=True)
+    sheet = book.active
+    date = sheet[2][0].value
+    date = date.strftime('%d.%m.%y')
+    datezamen = date
+    print(cursor.execute("SELECT id,class FROM ids").fetchall())
+    for row in cursor.execute("SELECT id,class FROM ids").fetchall():
+        await bot.send_message(int(row[0]),f'Замены на {date}')
+        with open('zam.json', encoding='utf-8') as f:
+            zam_d = json.load(f)
+        try:
+            s = zam_d[datezamen]
+            if row[1] != '00':
+                for i in s:
+                    if i[0] == row[1]:
+                        await bot.send_message(int(row[0]), f'{row[1]} - {i[1]} урок - {i[2]}', reply_markup=zamen)
+            else:
+                for i in s:
+                    await bot.send_message(int(row[0]), f'{i[0]} - {i[1]} урок - {i[2]}', reply_markup=zamen)
+
+        except:
+            pass
+
+
     await bot.send_message(admin_id,'Замены перемещены в базу данных')
 
 executor.start_polling(dp, skip_updates=True)
+db.close()
