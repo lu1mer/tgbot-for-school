@@ -1,7 +1,7 @@
 from aiogram import Bot,types
 from aiogram.dispatcher import Dispatcher, FSMContext
 from aiogram.utils import executor
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton,BotCommand, BotCommandScopeDefault
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 import openpyxl
@@ -24,12 +24,24 @@ db.commit()
 
 btn_zam = KeyboardButton('Замены')
 btn_notice = KeyboardButton('Включить уведомления о заменах')
-zamen = ReplyKeyboardMarkup().add(btn_zam,btn_notice)
+zamen = ReplyKeyboardMarkup(resize_keyboard=True).add(btn_zam,btn_notice)
 
 
 btn_today = KeyboardButton('На сегодня')
 btn_tomorrow = KeyboardButton('На завтра')
 den = ReplyKeyboardMarkup(resize_keyboard=True).add(btn_today,btn_tomorrow)
+
+async def set_commands(bot: Bot):
+    commands = [
+        BotCommand(
+            command='start',
+            description='Начало работы'
+        ),
+
+    ]
+
+    await bot.set_my_commands(commands, BotCommandScopeDefault())
+
 def excel(name):
     with open('zam.json',encoding='utf-8') as f:
         zamen_dict = json.load(f)
@@ -58,11 +70,14 @@ class Clas(StatesGroup):
 
 @dp.message_handler(commands=['start','help'],state=None)
 async def command_start(message: types.Message):
+    await set_commands(bot)
+    global zamen
     if message.from_user.id != admin_id:
         await Clas.clas.set()
         await bot.send_message(message.from_user.id, '''Приветствую, этот бот создан для просматривания замен в 9 Лицее.\nУкажите ваш класс'''
                                                  )
     else:
+        zamen = ReplyKeyboardMarkup(resize_keyboard=True).add(btn_zam)
         await bot.send_message(message.from_user.id,'Что вы хотите добавить/изменить',reply_markup=zamen)
         await main_dialog(message)
 @dp.message_handler(state=Clas.clas)
@@ -126,8 +141,8 @@ async def admin_service(message: types.Message):
 
 @dp.message_handler(state=Test.test1,content_types=[types.ContentType.DOCUMENT])
 async def state1(message: types.Message, state: FSMContext):
-    print('123')
     file_id = message.document.file_id
+    print(file_id)
     file = await bot.get_file(file_id)
     file_path = file.file_path
     await bot.download_file(file_path, "zam.xlsx")
@@ -158,7 +173,10 @@ async def state1(message: types.Message, state: FSMContext):
             pass
 
 
-    await bot.send_message(admin_id,'Замены перемещены в базу данных')
+    await bot.send_message(message.from_user.id,'Замены перемещены в базу данных')
+# except:
+#     await bot.send_message(message.from_user.id, 'Неправильный файл')
+#     await main_dialog(message)
 
 executor.start_polling(dp, skip_updates=True)
 db.close()
