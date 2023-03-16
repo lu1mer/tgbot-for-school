@@ -4,13 +4,12 @@ from aiogram.utils import executor
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton,BotCommand, BotCommandScopeDefault
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-import openpyxl
+from parse_excel import excel_to_json
 import json
-import os
+
 import datetime
 import sqlite3
 storage = MemoryStorage()
-admin_id = 612579531
 admin_id = 612579531
 token = '5579241270:AAEXkjIVCrDcSLLKjfR6SFH8C72JYgOPzz4'
 bot = Bot(token=token)
@@ -19,11 +18,10 @@ PERSON='00'
 
 db = sqlite3.connect('id.db')
 cursor = db.cursor()
-cursor.execute('''''')
 db.commit()
 
 btn_zam = KeyboardButton('Замены')
-btn_notice = KeyboardButton('Включить уведомления о заменах')
+btn_notice = KeyboardButton('Включить уведомления')
 zamen = ReplyKeyboardMarkup(resize_keyboard=True).add(btn_zam,btn_notice)
 
 
@@ -42,22 +40,6 @@ async def set_commands(bot: Bot):
 
     await bot.set_my_commands(commands, BotCommandScopeDefault())
 
-def excel(name):
-    with open('zam.json',encoding='utf-8') as f:
-        zamen_dict = json.load(f)
-    book = openpyxl.open(name,read_only=True)
-    sheet = book.active
-    date = sheet[2][0].value
-    date = date.strftime('%d.%m.%y')
-    zamen_dict[date] = []
-    for row in sheet:
-        if row[1].value != 'Класс':
-            zamen_dict[date].append([row[1].value,row[2].value,row[3].value])
-    print(zamen_dict)
-    with open('zam.json', 'w',encoding='utf-8') as outfile:
-        json.dump(zamen_dict, outfile,ensure_ascii=False)
-
-
 
 
 class Test(StatesGroup):
@@ -73,8 +55,14 @@ async def command_start(message: types.Message):
     await set_commands(bot)
     global zamen
     if message.from_user.id != admin_id:
+        print(cursor.execute("SELECT id FROM ids").fetchall())
+        if len(cursor.execute("SELECT id FROM ids").fetchall()) != 0 and str(message.from_user.id) in \
+                cursor.execute("SELECT id FROM ids").fetchall()[0]:
+            zamen = ReplyKeyboardMarkup(resize_keyboard=True).add(btn_zam)
+        else:
+            zamen = ReplyKeyboardMarkup(resize_keyboard=True).add(btn_zam, btn_notice)
         await Clas.clas.set()
-        await bot.send_message(message.from_user.id, '''Приветствую, этот бот создан для просматривания замен в 9 Лицее.\nУкажите ваш класс'''
+        await bot.send_message(message.from_user.id, '''Приветствую, этот бот создан для просматривания замен в 9 Лицее.\nУкажите ваш класс в формате цБ (пример - 3Л)'''
                                                  )
     else:
         zamen = ReplyKeyboardMarkup(resize_keyboard=True).add(btn_zam)
@@ -92,12 +80,13 @@ async def clas1(message: types.Message,state: FSMContext):
 @dp.message_handler()
 async def main_dialog(message: types.Message):
     global cursor,zamen,PERSON,db
+    print(cursor.execute("SELECT id FROM ids").fetchall())
     if message.text == 'Замены':
         if message.from_user.id == admin_id:
             await admin_service(message)
         else:
             await client(message)
-    if message.text == 'Включить уведомления о заменах':
+    if message.text == 'Включить уведомления':
         cursor.execute(f"INSERT INTO ids VALUES ('{message.from_user.id}','{PERSON}')")
         db.commit()
         zamen = ReplyKeyboardMarkup(resize_keyboard=True).add(btn_zam)
@@ -131,8 +120,10 @@ async def state1(message: types.Message, state: FSMContext):
                 await bot.send_message(message.from_user.id, f'{i[0]} - {i[1]} урок - {i[2]}',reply_markup=zamen)
 
     except:
-        await bot.send_message(message.from_user.id,'Вы неправильно ввели дату или на такую дату нет замен',reply_markup=zamen)
+        await bot.send_message(message.from_user.id,'На такую дату нет замен',reply_markup=zamen)
+        await state.finish()
     await state.finish()
+
 
 @dp.message_handler(state=None)
 async def admin_service(message: types.Message):
@@ -147,16 +138,10 @@ async def state1(message: types.Message, state: FSMContext):
     file_path = file.file_path
     await bot.download_file(file_path, "zam.xlsx")
     await state.finish()
-    excel('zam.xlsx')
-
-    book = openpyxl.open('zam.xlsx',read_only=True)
-    sheet = book.active
-    date = sheet[2][0].value
-    date = date.strftime('%d.%m.%y')
-    datezamen = date
+    datezamen = excel_to_json('zam.xlsx')
     print(cursor.execute("SELECT id,class FROM ids").fetchall())
     for row in cursor.execute("SELECT id,class FROM ids").fetchall():
-        await bot.send_message(int(row[0]),f'Замены на {date}')
+        await bot.send_message(int(row[0]),f'Замены на {datezamen}')
         with open('zam.json', encoding='utf-8') as f:
             zam_d = json.load(f)
         try:
@@ -170,11 +155,11 @@ async def state1(message: types.Message, state: FSMContext):
                     await bot.send_message(int(row[0]), f'{i[0]} - {i[1]} урок - {i[2]}', reply_markup=zamen)
 
         except:
-            pass
+            print('43')
 
 
     await bot.send_message(message.from_user.id,'Замены перемещены в базу данных')
-# except:
+#except:
 #     await bot.send_message(message.from_user.id, 'Неправильный файл')
 #     await main_dialog(message)
 
