@@ -55,9 +55,8 @@ async def command_start(message: types.Message):
     await set_commands(bot)
     global zamen
     if message.from_user.id != admin_id:
-        print(cursor.execute("SELECT id FROM ids").fetchall())
-        if len(cursor.execute("SELECT id FROM ids").fetchall()) != 0 and str(message.from_user.id) in \
-                cursor.execute("SELECT id FROM ids").fetchall()[0]:
+        if len(cursor.execute("SELECT id FROM ids WHERE notice='T'").fetchall()) != 0 and str(message.from_user.id) in \
+                cursor.execute("SELECT id FROM ids WHERE notice='T'").fetchall()[0]:
             zamen = ReplyKeyboardMarkup(resize_keyboard=True).add(btn_zam)
         else:
             zamen = ReplyKeyboardMarkup(resize_keyboard=True).add(btn_zam, btn_notice)
@@ -72,6 +71,14 @@ async def command_start(message: types.Message):
 async def clas1(message: types.Message,state: FSMContext):
     global PERSON
     PERSON = message.text
+    if str(message.from_user.id) in [i[0] for i in cursor.execute("SELECT id FROM ids").fetchall()]:
+        cursor.execute('''UPDATE ids SET class = ? WHERE id = ?''', (PERSON, str(message.from_user.id)))
+        db.commit()
+        print('312')
+    else:
+        cursor.execute(f"INSERT INTO ids VALUES ('{message.from_user.id}','{PERSON}','F')")
+        db.commit()
+    print(cursor.execute("SELECT id,class FROM ids").fetchall())
     await bot.send_message(message.from_user.id,'Приняли',reply_markup=zamen)
     await main_dialog(message)
     await state.finish()
@@ -80,14 +87,13 @@ async def clas1(message: types.Message,state: FSMContext):
 @dp.message_handler()
 async def main_dialog(message: types.Message):
     global cursor,zamen,PERSON,db
-    print(cursor.execute("SELECT id FROM ids").fetchall())
     if message.text == 'Замены':
         if message.from_user.id == admin_id:
             await admin_service(message)
         else:
             await client(message)
     if message.text == 'Включить уведомления':
-        cursor.execute(f"INSERT INTO ids VALUES ('{message.from_user.id}','{PERSON}')")
+        cursor.execute('''UPDATE ids SET notice = ? WHERE id = ?''', ('T', str(message.from_user.id)))
         db.commit()
         zamen = ReplyKeyboardMarkup(resize_keyboard=True).add(btn_zam)
         await bot.send_message(message.from_user.id,'Уведомления включены',reply_markup=zamen)
@@ -111,13 +117,10 @@ async def state1(message: types.Message, state: FSMContext):
         zam_d = json.load(f)
     try:
         s = zam_d[datezamen]
-        if PERSON != '00':
-            for i in s:
-                if i[0] == PERSON:
-                    await bot.send_message(message.from_user.id,f'{PERSON} - {i[1]} урок - {i[2]}',reply_markup=zamen)
-        else:
-            for i in s:
-                await bot.send_message(message.from_user.id, f'{i[0]} - {i[1]} урок - {i[2]}',reply_markup=zamen)
+        for i in s:
+            if i[0] == cursor.execute(f"SELECT class FROM ids WHERE id='{message.from_user.id}'").fetchone()[0]:
+                print(message.from_user.id,cursor.execute(f"SELECT class FROM ids WHERE id='{message.from_user.id}'").fetchone()[0],i[0])
+                await bot.send_message(message.from_user.id,f'{i[0]} - {i[1]} урок - {i[2]}',reply_markup=zamen)
 
     except:
         await bot.send_message(message.from_user.id,'На такую дату нет замен',reply_markup=zamen)
@@ -133,29 +136,32 @@ async def admin_service(message: types.Message):
 @dp.message_handler(state=Test.test1,content_types=[types.ContentType.DOCUMENT])
 async def state1(message: types.Message, state: FSMContext):
     file_id = message.document.file_id
-    print(file_id)
     file = await bot.get_file(file_id)
     file_path = file.file_path
     await bot.download_file(file_path, "zam.xlsx")
     await state.finish()
     datezamen = excel_to_json('zam.xlsx')
-    print(cursor.execute("SELECT id,class FROM ids").fetchall())
-    for row in cursor.execute("SELECT id,class FROM ids").fetchall():
-        await bot.send_message(int(row[0]),f'Замены на {datezamen}')
-        with open('zam.json', encoding='utf-8') as f:
-            zam_d = json.load(f)
-        try:
-            s = zam_d[datezamen]
-            if row[1] != '00':
-                for i in s:
-                    if i[0] == row[1]:
-                        await bot.send_message(int(row[0]), f'{row[1]} - {i[1]} урок - {i[2]}', reply_markup=zamen)
-            else:
-                for i in s:
-                    await bot.send_message(int(row[0]), f'{i[0]} - {i[1]} урок - {i[2]}', reply_markup=zamen)
+    for row in cursor.execute("SELECT id,class,notice FROM ids").fetchall():
+        print(row)
+        if row[2] == 'T':
+            t=False
+            with open('zam.json', encoding='utf-8') as f:
+                zam_d = json.load(f)
+            try:
+                s = zam_d[datezamen]
+                if row[1] != '00':
+                    for i in s:
+                        if i[0] == row[1]:
+                            if t == False:
+                                await bot.send_message(int(row[0]), f'Замены на {datezamen}')
+                                t=True
+                            await bot.send_message(int(row[0]), f'{row[1]} - {i[1]} урок - {i[2]}', reply_markup=zamen)
+                else:
+                    for i in s:
+                        await bot.send_message(int(row[0]), f'{i[0]} - {i[1]} урок - {i[2]}', reply_markup=zamen)
 
-        except:
-            print('43')
+            except:
+                print('43')
 
 
     await bot.send_message(message.from_user.id,'Замены перемещены в базу данных')
