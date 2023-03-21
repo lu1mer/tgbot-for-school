@@ -110,11 +110,13 @@ async def state1(message: types.Message, state: FSMContext):
             d = 0
         else:
             d=1
+        print(datetime.datetime.now())
         datezamen = (datetime.date.today() + datetime.timedelta(days=d)).strftime('%d.%m.%y')
     else:
         datezamen = message.text
     with open('zam.json', encoding='utf-8') as f:
         zam_d = json.load(f)
+    print(cursor.execute(f"SELECT class FROM ids WHERE id='{message.from_user.id}'").fetchone()[0])
     try:
         s = zam_d[datezamen]
         for i in s:
